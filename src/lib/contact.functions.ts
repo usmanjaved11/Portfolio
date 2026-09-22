@@ -1,8 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
+import { Resend } from "resend";
 
 export type ContactResponse = { success: boolean; message: string };
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const contactSchema = z.object({
   name: z.string().trim().min(2, "Please enter your name.").max(100, "Name is too long."),
@@ -66,6 +69,29 @@ export const sendContactMessage = createServerFn({ method: "POST" })
         // Log technical details server-side only.
         console.error("contact insert failed", error);
         return { success: false, message: "Something went wrong. Please try again later." };
+      }
+
+      const toEmail = process.env.CONTACT_TO_EMAIL;
+      const fromEmail = process.env.CONTACT_FROM_EMAIL;
+
+      if (toEmail && fromEmail) {
+        const emailResult = await resend.emails.send({
+          from: fromEmail,
+          to: [toEmail],
+          reply_to: parsed.data.email,
+          subject: `New portfolio message from ${parsed.data.name}`,
+          html: `
+            <h3>New message</h3>
+            <p><strong>Name:</strong> ${parsed.data.name}</p>
+            <p><strong>Email:</strong> ${parsed.data.email}</p>
+            <p><strong>Message:</strong></p>
+            <p>${parsed.data.message.replace(/\n/g, "<br />")}</p>
+          `,
+        });
+
+        if (emailResult.error) {
+          console.error("email send failed", emailResult.error);
+        }
       }
 
       return { success: true, message: "Your message has been sent successfully." };
